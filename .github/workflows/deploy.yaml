@@ -42,16 +42,16 @@ jobs:
     # 6. Deploy to ECS
     - name: Deploy to ECS
       run: |
-        IMAGE_URI=${{ steps.ecr-login.outputs.registry }}/my-microservice:latest
+        IMAGE_URI=${{ steps.ecr-login.outputs.registry }}/${MICROSERVICE}:latest
         aws ecs update-service \
-          --cluster my-ecs-cluster \
-          --service my-ecs-service \
+          --cluster ${ECS_CLUSTER} \
+          --service ${ECS_SERVICE} \
           --force-new-deployment \
           --region ${{ secrets.AWS_REGION }} \
           --output json \
           --query "service" \
           --task-definition $(aws ecs register-task-definition \
-            --family my-task-family \
+            --family ${TASK_FAMILY} \
             --container-definitions "[{\"name\":\"my-microservice\",\"image\":\"$IMAGE_URI\",\"essential\":true,\"memory\":512,\"cpu\":256,\"portMappings\":[{\"containerPort\":3000,\"hostPort\":3000}]}]" \
             --query "taskDefinition.taskDefinitionArn" \
             --output text)
