@@ -1,0 +1,61 @@
+name: Build & Deploy Microservice to ECS
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # Checkout code
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # Configure AWS OIDC Credentials
+    - name: Configure AWS Credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        role-to-assume: ${{ secrets.AWS_OIDC_ROLE }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # Login to ECR
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    # Build Docker Image
+    - name: Build Docker image
+      run: |
+        IMAGE_TAG=${{ github.sha }}
+        docker build -t ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:${IMAGE_TAG} .
+
+    # Push Docker Image
+    - name: Push Docker image
+      run: |
+        IMAGE_TAG=${{ github.sha }}
+        docker push ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:${IMAGE_TAG}
+
+    # Update ECS task definition JSON
+    - name: Render Amazon ECS task definition
+      id: taskdef
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ecs/taskdef.json
+        container-name: microservice
+        image: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:${{ github.sha }}
+
+    # Deploy on ECS
+    - name: Deploy Amazon ECS service
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+      with:
+        task-definition: ${{ steps.taskdef.outputs.task-definition }}
+        service: ${{ secrets.ECS_SERVICE }}
+        cluster: ${{ secrets.ECS_CLUSTER }}
+        wait-for-service-stability: true
