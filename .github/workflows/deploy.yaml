@@ -1,0 +1,57 @@
+name: Build and Deploy to ECS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout repo
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    # 2. Configure AWS credentials
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # 3. Log in to ECR
+    - name: Login to Amazon ECR
+      id: ecr-login
+      uses: aws-actions/amazon-ecr-login@v2
+
+    # 4. Build Docker image
+    - name: Build Docker Image
+      run: |
+        IMAGE_URI=${{ steps.ecr-login.outputs.registry }}/my-microservice:latest
+        docker build -t $IMAGE_URI .
+    
+    # 5. Push Docker image to ECR
+    - name: Push to ECR
+      run: |
+        IMAGE_URI=${{ steps.ecr-login.outputs.registry }}/my-microservice:latest
+        docker push $IMAGE_URI
+
+    # 6. Deploy to ECS
+    - name: Deploy to ECS
+      run: |
+        IMAGE_URI=${{ steps.ecr-login.outputs.registry }}/my-microservice:latest
+        aws ecs update-service \
+          --cluster my-ecs-cluster \
+          --service my-ecs-service \
+          --force-new-deployment \
+          --region ${{ secrets.AWS_REGION }} \
+          --output json \
+          --query "service" \
+          --task-definition $(aws ecs register-task-definition \
+            --family my-task-family \
+            --container-definitions "[{\"name\":\"my-microservice\",\"image\":\"$IMAGE_URI\",\"essential\":true,\"memory\":512,\"cpu\":256,\"portMappings\":[{\"containerPort\":3000,\"hostPort\":3000}]}]" \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text)
